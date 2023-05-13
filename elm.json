@@ -5,13 +5,13 @@
     "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules": [
-       "Elm.Syntax.Eval"
+        "Elm.Syntax.Eval"
     ],
-    "elm-version": "0.19.0 <= v <= 0.20.0",
+    "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {
-        "elm/browser": "1.0.2",
-        "elm/core": "1.0.5",
-        "elm/html": "1.0.0"
+        "elm/core": "1.0.0 <= v < 2.0.0",
+        "elm-community/graph": "6.0.0 <= v < 7.0.0",
+        "stil4m/elm-syntax": "7.2.9 <= v < 8.0.0"
     },
     "test-dependencies": {}
 }
