@@ -1,0 +1,17 @@
+{
+    "type": "package",
+    "name": "micahhahn/elm-syntax-eval",
+    "summary": "A simple evaluation engine for stil4m/elm-syntax",
+    "license": "BSD-3-Clause",
+    "version": "1.0.0",
+    "exposed-modules": [
+       "Elm.Syntax.Eval"
+    ],
+    "elm-version": "0.19.0 <= v <= 0.20.0",
+    "dependencies": {
+        "elm/browser": "1.0.2",
+        "elm/core": "1.0.5",
+        "elm/html": "1.0.0"
+    },
+    "test-dependencies": {}
+}
