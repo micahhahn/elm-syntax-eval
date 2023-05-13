@@ -31,4 +31,42 @@ type ConstructorName
 type Error
     = Error
 
-eval = Debug.todo ""
+
+patternBindingNames : Node Pattern -> List String
+patternBindingNames patternNode =
+    let
+        go todoNodes accum =
+            case todoNodes of
+                [] ->
+                    accum
+
+                (Node _ pattern) :: otherNodes ->
+                    case pattern of
+                        TuplePattern tupleNodes ->
+                            go (tupleNodes ++ otherNodes) accum
+
+                        RecordPattern fieldNodes ->
+                            go otherNodes (List.foldl (Node.value >> (::)) accum fieldNodes)
+
+                        UnConsPattern headNode tailNode ->
+                            go (headNode :: tailNode :: otherNodes) accum
+
+                        ListPattern listNodes ->
+                            go (listNodes ++ otherNodes) accum
+
+                        VarPattern name ->
+                            go otherNodes (name :: accum)
+
+                        NamedPattern _ conNodes ->
+                            go (conNodes ++ otherNodes) accum
+
+                        AsPattern innerNode (Node _ name) ->
+                            go (innerNode :: otherNodes) (name :: accum)
+
+                        ParenthesizedPattern innerNode ->
+                            go (innerNode :: otherNodes) accum
+
+                        _ ->
+                            go otherNodes accum
+    in
+    go [ patternNode ] []
