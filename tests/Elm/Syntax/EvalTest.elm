@@ -68,4 +68,16 @@ suite =
                 |> makeExpression
                 |> evalExpression Dict.empty
                 |> Expect.equal (Ok ElmUnit)
+        , test "Let expression with dependency" <|
+            \_ ->
+                """
+    let 
+        x = 1
+
+        y = x + 1
+    in y
+                """
+                |> makeExpression
+                |> evalExpression Dict.empty
+                |> Expect.equal (Ok (ElmInt 2))
         ]

@@ -8,6 +8,7 @@ import Elm.Syntax.Pattern exposing (Pattern(..))
 import Graph
 import Result.Extra2
 import Set exposing (Set)
+import Result
 
 
 type ElmValue
@@ -70,12 +71,30 @@ evalLetBlock originalBindings letBlock =
             newBindingsResult
                 |> Result.andThen (\newBindings -> evalExpression newBindings letBlock.expression)
 
-
 evalExpression : Dict String ElmValue -> Node Expression -> Result Error ElmValue
 evalExpression bindings (Node _ expression) =
     case expression of 
         UnitExpr ->
             Ok ElmUnit
+
+        OperatorApplication operator _ leftExpression rightExpression ->
+            case (evalExpression bindings leftExpression, evalExpression bindings rightExpression) of 
+                (Err err, _) ->
+                    Err err
+
+                (_, Err err) ->
+                    Err err 
+                
+                (Ok leftValue, Ok rightValue) ->
+                    case (operator, leftValue, rightValue) of 
+                        ("+", ElmInt leftInt, ElmInt rightInt) ->
+                            Ok <| ElmInt (leftInt + rightInt)
+
+                        ("+", ElmFloat leftFloat, ElmFloat rightFloat) ->
+                            Ok <| ElmFloat (leftFloat + rightFloat)
+
+                        _ ->
+                            Debug.todo ""
 
         FunctionOrValue moduleName name ->
             case moduleName of 
@@ -89,6 +108,24 @@ evalExpression bindings (Node _ expression) =
 
                 _ ->
                     Debug.todo ""
+
+        Integer int ->
+            Ok <| ElmInt int
+
+        Hex int ->
+            Ok <| ElmInt int
+
+        Floatable float ->
+            Ok <| ElmFloat float
+
+        Negation (Node _ negValue) ->
+            Debug.todo ""
+
+        Literal string ->
+            Ok <| ElmString string
+
+        CharLiteral char ->
+            Ok <| ElmChar char
 
         LetExpression letBlock ->
             evalLetBlock bindings letBlock
