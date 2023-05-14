@@ -20,7 +20,7 @@ makeExpression elmExpression =
         elmFile =
             "module Test exposing (..)\n\n"
                 ++ expressionName
-                ++ " = "
+                ++ " =\n    "
                 ++ String.trim elmExpression
 
         file =
@@ -46,7 +46,7 @@ makeExpression elmExpression =
         _ ->
             Debug.todo "makeExpression should only contain an expresion"
 
-
+suite : Test
 suite =
     describe "Elm.Syntax.Eval"
         [ test "Unit Expression" <|
@@ -57,4 +57,15 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok ElmUnit)
+        , test "Simple let expression" <|
+            \_ ->
+                """
+    let 
+        x = 
+            ()
+    in x
+                """
+                |> makeExpression
+                |> evalExpression Dict.empty
+                |> Expect.equal (Ok ElmUnit)
         ]

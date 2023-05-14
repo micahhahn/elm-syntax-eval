@@ -34,6 +34,7 @@ type ConstructorName
 type Error
     = CyclicDependencyError
     | PatternMatchError PatternMatchError
+    | MissingBinding String
 
 
 type PatternMatchError
@@ -44,8 +45,8 @@ type PatternMatchError
     | ConstructorMatchError ConstructorName ConstructorName
 
 
-evalLetBlock : LetBlock -> Dict String ElmValue -> Result Error ElmValue
-evalLetBlock letBlock originalBindings =
+evalLetBlock : Dict String ElmValue -> LetBlock -> Result Error ElmValue
+evalLetBlock originalBindings letBlock =
     case orderLetDeclarations (List.map Node.value letBlock.declarations) of
         Err e ->
             Err e
@@ -57,7 +58,7 @@ evalLetBlock letBlock originalBindings =
                         (\declaration bindings ->
                             case declaration of
                                 LetFunction function ->
-                                    evalFunction (Node.value function.declaration) bindings
+                                    evalFunction bindings (Node.value function.declaration)
 
                                 LetDestructuring patternNode expressionNode ->
                                     evalExpression bindings expressionNode
@@ -75,6 +76,22 @@ evalExpression bindings (Node _ expression) =
     case expression of 
         UnitExpr ->
             Ok ElmUnit
+
+        FunctionOrValue moduleName name ->
+            case moduleName of 
+                [] ->
+                    case Dict.get name bindings of 
+                        Nothing ->
+                            Err <| MissingBinding name
+
+                        Just value ->
+                            Ok value
+
+                _ ->
+                    Debug.todo ""
+
+        LetExpression letBlock ->
+            evalLetBlock bindings letBlock
 
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
@@ -113,9 +130,21 @@ bindDestructuring constantMatching patternNode value =
             Debug.todo ""
 
 
-evalFunction : FunctionImplementation -> Dict String ElmValue -> Result Error (Dict String ElmValue)
-evalFunction functionImplementation bindings =
-    Debug.todo ""
+evalFunction : Dict String ElmValue -> FunctionImplementation -> Result Error (Dict String ElmValue)
+evalFunction bindings { name, arguments, expression } =
+    -- elm-syntax got this one wrong.  x = 7 should be a destructuring instead of a function, but here we are.
+    case arguments of 
+        [] ->
+            evalExpression bindings expression
+                |> Result.map (\value ->
+                    Dict.insert 
+                        (Node.value name)
+                        value
+                        bindings
+                )
+
+        _ ->
+            Debug.todo ""
 
 
 orderLetDeclarations : List LetDeclaration -> Result Error (List LetDeclaration)
