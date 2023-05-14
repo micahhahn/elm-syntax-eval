@@ -61,8 +61,7 @@ suite =
             \_ ->
                 """
     let 
-        x = 
-            ()
+        x = ()
     in x
                 """
                 |> makeExpression
@@ -73,8 +72,18 @@ suite =
                 """
     let 
         x = 1
-
         y = x + 1
+    in y
+                """
+                |> makeExpression
+                |> evalExpression Dict.empty
+                |> Expect.equal (Ok (ElmInt 2))
+        , test "Let expression with out of order dependency" <|
+            \_ ->
+                """
+    let 
+        y = x + 1
+        x = 1
     in y
                 """
                 |> makeExpression
