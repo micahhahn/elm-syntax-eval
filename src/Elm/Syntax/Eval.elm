@@ -1,6 +1,7 @@
 module Elm.Syntax.Eval exposing (..)
 
 import Dict exposing (Dict)
+import Elm.Syntax.Exposing exposing (Exposing(..))
 import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..))
@@ -32,6 +33,15 @@ type ConstructorName
 
 type Error
     = CyclicDependencyError
+    | PatternMatchError PatternMatchError
+
+
+type PatternMatchError
+    = CharMatchError Char Char
+    | StringMatchError String String
+    | IntMatchError Int Int
+    | FloatMatchError Float Float
+    | ConstructorMatchError ConstructorName ConstructorName
 
 
 evalLetBlock : LetBlock -> Dict String ElmValue -> Result Error ElmValue
@@ -50,23 +60,57 @@ evalLetBlock letBlock originalBindings =
                                     evalFunction (Node.value function.declaration) bindings
 
                                 LetDestructuring patternNode expressionNode ->
-                                    evalDestructuring patternNode expressionNode bindings
+                                    evalExpression bindings expressionNode
+                                        |> Result.andThen (bindDestructuring caseConstantMatching patternNode)
                         )
                         originalBindings
                         orderedDeclarations
             in
             newBindingsResult
-                |> Result.andThen (\newBindings -> evalExpression letBlock.expression newBindings)
+                |> Result.andThen (\newBindings -> evalExpression newBindings letBlock.expression)
 
 
-evalExpression : Node Expression -> Dict String ElmValue -> Result Error ElmValue
-evalExpression =
-    Debug.todo ""
+evalExpression : Dict String ElmValue -> Node Expression -> Result Error ElmValue
+evalExpression bindings (Node _ expression) =
+    case expression of 
+        UnitExpr ->
+            Ok ElmUnit
+
+        _ ->
+            Debug.todo ("Unimplemented case" ++ Debug.toString expression)
 
 
-evalDestructuring : Node Pattern -> Node Expression -> Dict String ElmValue -> Result Error (Dict String ElmValue)
-evalDestructuring patternNode expressionNode bindings =
-    Debug.todo ""
+type alias ConstantMatching =
+    { matchChar : Char -> Char -> Result Error ElmValue
+    , matchString : String -> String -> Result Error ElmValue
+    , matchInt : Int -> Int -> Result Error ElmValue
+    , matchFloat : Float -> Float -> Result Error ElmValue
+    }
+
+
+caseConstantMatching : ConstantMatching
+caseConstantMatching =
+    let
+        match makeValue makeError =
+            \left right ->
+                if left == right then
+                    Ok <| makeValue left
+
+                else
+                    Err <| PatternMatchError (makeError left right)
+    in
+    { matchChar = match ElmChar CharMatchError
+    , matchString = match ElmString StringMatchError
+    , matchInt = match ElmInt IntMatchError
+    , matchFloat = match ElmFloat FloatMatchError
+    }
+
+
+bindDestructuring : ConstantMatching -> Node Pattern -> ElmValue -> Result Error (Dict String ElmValue)
+bindDestructuring constantMatching patternNode value =
+    case ( Node.value patternNode, value ) of
+        _ ->
+            Debug.todo ""
 
 
 evalFunction : FunctionImplementation -> Dict String ElmValue -> Result Error (Dict String ElmValue)
