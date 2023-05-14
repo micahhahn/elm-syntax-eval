@@ -1,9 +1,12 @@
 module Elm.Syntax.Eval exposing (..)
 
 import Dict exposing (Dict)
-import Elm.Syntax.Expression exposing (Expression(..), LetDeclaration(..))
+import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..))
+import Graph
+import Result.Extra2
+import Set exposing (Set)
 
 
 type ElmValue
@@ -16,7 +19,7 @@ type ElmValue
     | ElmTuple (List ElmValue)
     | ElmRecord (Dict String ElmValue)
     | ElmConstructor ConstructorName (List ElmValue)
-    | ElmLambda (ElmValue -> Result Error ElmValue)
+    | ElmLambda (Dict String ElmValue) (ElmValue -> Result Error ElmValue)
 
 
 type ModuleName
@@ -28,7 +31,106 @@ type ConstructorName
 
 
 type Error
-    = Error
+    = CyclicDependencyError
+
+
+evalLetBlock : LetBlock -> Dict String ElmValue -> Result Error ElmValue
+evalLetBlock letBlock originalBindings =
+    case orderLetDeclarations (List.map Node.value letBlock.declarations) of
+        Err e ->
+            Err e
+
+        Ok orderedDeclarations ->
+            let
+                newBindingsResult =
+                    Result.Extra2.combineFold
+                        (\declaration bindings ->
+                            case declaration of
+                                LetFunction function ->
+                                    evalFunction (Node.value function.declaration) bindings
+
+                                LetDestructuring patternNode expressionNode ->
+                                    evalDestructuring patternNode expressionNode bindings
+                        )
+                        originalBindings
+                        orderedDeclarations
+            in
+            newBindingsResult
+                |> Result.andThen (\newBindings -> evalExpression letBlock.expression newBindings)
+
+
+evalExpression : Node Expression -> Dict String ElmValue -> Result Error ElmValue
+evalExpression =
+    Debug.todo ""
+
+
+evalDestructuring : Node Pattern -> Node Expression -> Dict String ElmValue -> Result Error (Dict String ElmValue)
+evalDestructuring patternNode expressionNode bindings =
+    Debug.todo ""
+
+
+evalFunction : FunctionImplementation -> Dict String ElmValue -> Result Error (Dict String ElmValue)
+evalFunction functionImplementation bindings =
+    Debug.todo ""
+
+
+orderLetDeclarations : List LetDeclaration -> Result Error (List LetDeclaration)
+orderLetDeclarations declarations =
+    let
+        ( bindingInfos, nameToIndex ) =
+            declarations
+                |> List.indexedMap
+                    (\index declaration ->
+                        case declaration of
+                            LetFunction function ->
+                                let
+                                    implementation =
+                                        Node.value function.declaration
+
+                                    bindingInfo =
+                                        { nodeId = index
+                                        , boundNames = expressionBoundNames implementation.expression
+                                        , declaration = declaration
+                                        }
+                                in
+                                [ ( bindingInfo, ( Node.value implementation.name, index ) ) ]
+
+                            LetDestructuring pattern expression ->
+                                let
+                                    patternNames =
+                                        patternBindingNames pattern
+
+                                    bindingInfo =
+                                        { nodeId = index
+                                        , boundNames = expressionBoundNames expression
+                                        , declaration = declaration
+                                        }
+                                in
+                                List.map (\name -> ( bindingInfo, ( name, index ) )) patternNames
+                    )
+                |> List.concat
+                |> List.unzip
+                |> Tuple.mapSecond Dict.fromList
+
+        nodes =
+            List.map (\bindingInfo -> { id = bindingInfo.nodeId, label = bindingInfo }) bindingInfos
+
+        edgePairs =
+            List.concatMap
+                (\bindingInfo ->
+                    List.filterMap
+                        (\name ->
+                            Dict.get name nameToIndex
+                                |> Maybe.map (\referenceIndex -> ( referenceIndex, bindingInfo.nodeId ))
+                        )
+                        bindingInfo.boundNames
+                )
+                bindingInfos
+    in
+    Graph.fromNodeLabelsAndEdgePairs nodes edgePairs
+        |> Graph.checkAcyclic
+        |> Result.mapError (always CyclicDependencyError)
+        |> Result.map (Graph.topologicalSort >> List.map (.node >> .label >> .label >> .declaration))
 
 
 patternBindingNames : Node Pattern -> List String
