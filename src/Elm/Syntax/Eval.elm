@@ -203,6 +203,7 @@ evalApplication bindings value argNodes =
                 ElmLambda func ->
                     evalExpression bindings argNode
                         |> Result.andThen func
+                        |> Result.andThen (\newValue -> evalApplication bindings newValue otherArgs)
 
                 _ ->
                     Debug.todo "Expected lambda"

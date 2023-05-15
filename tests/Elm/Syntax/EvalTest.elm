@@ -1,13 +1,13 @@
 module Elm.Syntax.EvalTest exposing (suite)
 
+import Dict
 import Elm.Parser exposing (parse)
 import Elm.Processing
 import Elm.Syntax.Declaration exposing (Declaration(..))
-import Elm.Syntax.Eval exposing (evalExpression, ElmValue(..))
+import Elm.Syntax.Eval exposing (ElmValue(..), evalExpression)
 import Elm.Syntax.Expression exposing (Expression(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Expect
-import Dict
 import Test exposing (..)
 
 
@@ -46,6 +46,7 @@ makeExpression elmExpression =
         _ ->
             Debug.todo "makeExpression should only contain an expresion"
 
+
 suite : Test
 suite =
     describe "Elm.Syntax.Eval"
@@ -64,9 +65,9 @@ suite =
         x = ()
     in x
                 """
-                |> makeExpression
-                |> evalExpression Dict.empty
-                |> Expect.equal (Ok ElmUnit)
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok ElmUnit)
         , test "Let expression with dependency" <|
             \_ ->
                 """
@@ -75,9 +76,9 @@ suite =
         y = x + 1
     in y
                 """
-                |> makeExpression
-                |> evalExpression Dict.empty
-                |> Expect.equal (Ok (ElmInt 2))
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmInt 2))
         , test "Let expression with out of order dependency" <|
             \_ ->
                 """
@@ -86,9 +87,9 @@ suite =
         x = 1
     in y
                 """
-                |> makeExpression
-                |> evalExpression Dict.empty
-                |> Expect.equal (Ok (ElmInt 2))
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmInt 2))
         , test "Simple let with lambda expression" <|
             \_ ->
                 """
@@ -96,9 +97,9 @@ suite =
         x = \\_ -> ()
     in x ()
                 """
-                |> makeExpression
-                |> evalExpression Dict.empty
-                |> Expect.equal (Ok ElmUnit)
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok ElmUnit)
         , test "Identity lambda expression" <|
             \_ ->
                 """
@@ -106,7 +107,17 @@ suite =
         f = \\x -> x
     in f ()
                 """
-                |> makeExpression
-                |> evalExpression Dict.empty
-                |> Expect.equal (Ok ElmUnit)
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok ElmUnit)
+        , test "Multiple argument lambda expression" <|
+            \_ ->
+                """
+    let
+        f = \\x y -> x + y
+    in f 1 2
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmInt 3))
         ]
