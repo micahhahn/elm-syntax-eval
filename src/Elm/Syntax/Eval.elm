@@ -4,11 +4,11 @@ import Dict exposing (Dict)
 import Elm.Syntax.Exposing exposing (Exposing(..))
 import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
-import Elm.Syntax.Pattern exposing (Pattern(..))
+import Elm.Syntax.Pattern exposing (Pattern(..), QualifiedNameRef)
 import Graph
-import Result.Extra2
-import Set exposing (Set)
 import Result
+import Result.Extra
+import Result.Extra2
 
 
 type ElmValue
@@ -32,9 +32,15 @@ type ConstructorName
     = ConstructorName ModuleName String
 
 
+qualifiedNameToConstructorName : QualifiedNameRef -> ConstructorName
+qualifiedNameToConstructorName { moduleName, name } =
+    ConstructorName (ModuleName (String.join "." moduleName)) name
+
+
 type Error
     = CyclicDependencyError
     | PatternMatchError PatternMatchError
+    | TypeError TypeError
     | MissingBinding String
 
 
@@ -44,6 +50,27 @@ type PatternMatchError
     | IntMatchError Int Int
     | FloatMatchError Float Float
     | ConstructorMatchError ConstructorName ConstructorName
+
+
+type TypeError
+    = MissingPattern
+    | MissingValue
+    | MissingRecordField String
+    | TypeMismatch Pattern ElmValue
+
+
+type alias Bindings =
+    Dict String ElmValue
+
+
+consConstructorName : ConstructorName
+consConstructorName =
+    ConstructorName (ModuleName "List") "::"
+
+
+emptyListConstructorName : ConstructorName
+emptyListConstructorName =
+    ConstructorName (ModuleName "List") "[]"
 
 
 evalLetBlock : Dict String ElmValue -> LetBlock -> Result Error ElmValue
@@ -71,14 +98,15 @@ evalLetBlock originalBindings letBlock =
             newBindingsResult
                 |> Result.andThen (\newBindings -> evalExpression newBindings letBlock.expression)
 
+
 evalExpression : Dict String ElmValue -> Node Expression -> Result Error ElmValue
 evalExpression bindings (Node _ expression) =
-    case expression of 
+    case expression of
         UnitExpr ->
             Ok ElmUnit
 
         Application nodes ->
-            case nodes of 
+            case nodes of
                 [] ->
                     Debug.todo "What do we do here?"
 
@@ -87,28 +115,28 @@ evalExpression bindings (Node _ expression) =
                         |> Result.andThen (\funcValue -> evalApplication bindings funcValue argNodes)
 
         OperatorApplication operator _ leftExpression rightExpression ->
-            case (evalExpression bindings leftExpression, evalExpression bindings rightExpression) of 
-                (Err err, _) ->
+            case ( evalExpression bindings leftExpression, evalExpression bindings rightExpression ) of
+                ( Err err, _ ) ->
                     Err err
 
-                (_, Err err) ->
-                    Err err 
-                
-                (Ok leftValue, Ok rightValue) ->
-                    case (operator, leftValue, rightValue) of 
-                        ("+", ElmInt leftInt, ElmInt rightInt) ->
+                ( _, Err err ) ->
+                    Err err
+
+                ( Ok leftValue, Ok rightValue ) ->
+                    case ( operator, leftValue, rightValue ) of
+                        ( "+", ElmInt leftInt, ElmInt rightInt ) ->
                             Ok <| ElmInt (leftInt + rightInt)
 
-                        ("+", ElmFloat leftFloat, ElmFloat rightFloat) ->
+                        ( "+", ElmFloat leftFloat, ElmFloat rightFloat ) ->
                             Ok <| ElmFloat (leftFloat + rightFloat)
 
                         _ ->
                             Debug.todo ""
 
         FunctionOrValue moduleName name ->
-            case moduleName of 
+            case moduleName of
                 [] ->
-                    case Dict.get name bindings of 
+                    case Dict.get name bindings of
                         Nothing ->
                             Err <| MissingBinding name
 
@@ -140,33 +168,38 @@ evalExpression bindings (Node _ expression) =
             evalLetBlock bindings letBlock
 
         LambdaExpression lambda ->
-            bindLambda bindings lambda.args lambda.expression 
+            bindLambda bindings lambda.args lambda.expression
 
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
 
+
 bindLambda : Dict String ElmValue -> List (Node Pattern) -> Node Expression -> Result Error ElmValue
 bindLambda bindings argPatterns expressionNode =
-    case argPatterns of 
+    case argPatterns of
         [] ->
             evalExpression bindings expressionNode
 
-        (argPattern :: otherArgPatterns) ->
-            Ok <| ElmLambda (\value -> 
-                bindDestructuring caseConstantMatching argPattern value
-                    |> Result.andThen (\argBindings ->
-                        bindLambda (Dict.union argBindings bindings) otherArgPatterns expressionNode
+        argPattern :: otherArgPatterns ->
+            Ok <|
+                ElmLambda
+                    (\value ->
+                        bindDestructuring caseConstantMatching argPattern value
+                            |> Result.andThen
+                                (\argBindings ->
+                                    bindLambda (Dict.union argBindings bindings) otherArgPatterns expressionNode
+                                )
                     )
-            )
+
 
 evalApplication : Dict String ElmValue -> ElmValue -> List (Node Expression) -> Result Error ElmValue
 evalApplication bindings value argNodes =
-    case argNodes of 
+    case argNodes of
         [] ->
             Ok value
 
         argNode :: otherArgs ->
-            case value of 
+            case value of
                 ElmLambda func ->
                     evalExpression bindings argNode
                         |> Result.andThen func
@@ -174,54 +207,161 @@ evalApplication bindings value argNodes =
                 _ ->
                     Debug.todo "Expected lambda"
 
-type alias ConstantMatching =
-    { matchChar : Char -> Char -> Result Error ElmValue
-    , matchString : String -> String -> Result Error ElmValue
-    , matchInt : Int -> Int -> Result Error ElmValue
-    , matchFloat : Float -> Float -> Result Error ElmValue
+
+type alias ConstantMatching x =
+    { matchChar : x -> Char -> Char -> Result Error x
+    , matchString : x -> String -> String -> Result Error x
+    , matchInt : x -> Int -> Int -> Result Error x
+    , matchFloat : x -> Float -> Float -> Result Error x
     }
 
 
-caseConstantMatching : ConstantMatching
+{-| Value match errors produce errors
+-}
+caseConstantMatching : ConstantMatching x
 caseConstantMatching =
     let
-        match makeValue makeError =
-            \left right ->
+        match makeError =
+            \bindings left right ->
                 if left == right then
-                    Ok <| makeValue left
+                    Ok <| bindings
 
                 else
                     Err <| PatternMatchError (makeError left right)
     in
-    { matchChar = match ElmChar CharMatchError
-    , matchString = match ElmString StringMatchError
-    , matchInt = match ElmInt IntMatchError
-    , matchFloat = match ElmFloat FloatMatchError
+    { matchChar = match CharMatchError
+    , matchString = match StringMatchError
+    , matchInt = match IntMatchError
+    , matchFloat = match FloatMatchError
     }
 
 
-bindDestructuring : ConstantMatching -> Node Pattern -> ElmValue -> Result Error (Dict String ElmValue)
-bindDestructuring constantMatching patternNode value =
-    case ( Node.value patternNode, value ) of
-        (AllPattern, _) ->
-            Ok <| Dict.empty
+{-| Value match errors are ignored
+-}
+letConstanctMatching : ConstantMatching x
+letConstanctMatching =
+    { matchChar = \accum _ _ -> Ok accum
+    , matchString = \accum _ _ -> Ok accum
+    , matchInt = \accum _ _ -> Ok accum
+    , matchFloat = \accum _ _ -> Ok accum
+    }
 
-        _ ->
-            Debug.todo ("Unhandled pattern " ++ Debug.toString patternNode)
+
+bindDestructuring : ConstantMatching (List ( String, ElmValue )) -> Node Pattern -> ElmValue -> Result Error (Dict String ElmValue)
+bindDestructuring constantMatching patternNode originalValue =
+    let
+        bindSequence : List ( String, ElmValue ) -> List (Node Pattern) -> List ElmValue -> Int -> Result ( Int, Error ) (List ( String, ElmValue ))
+        bindSequence accum patterns values seqIndex =
+            case ( patterns, values ) of
+                ( pattern :: otherPatterns, value :: otherValues ) ->
+                    case bind pattern value accum of
+                        Err e ->
+                            Err ( seqIndex, e )
+
+                        Ok result ->
+                            bindSequence result otherPatterns otherValues (seqIndex + 1)
+
+                ( [], [] ) ->
+                    Ok accum
+
+                ( [], _ ) ->
+                    Err <| ( seqIndex, TypeError MissingPattern )
+
+                ( _, [] ) ->
+                    Err <| ( seqIndex, TypeError MissingValue )
+
+        bind : Node Pattern -> ElmValue -> List ( String, ElmValue ) -> Result Error (List ( String, ElmValue ))
+        bind (Node _ pattern) value accum =
+            case ( pattern, value ) of
+                ( AllPattern, _ ) ->
+                    Ok accum
+
+                ( UnitPattern, ElmUnit ) ->
+                    Ok accum
+
+                ( CharPattern patternChar, ElmChar valueChar ) ->
+                    constantMatching.matchChar accum patternChar valueChar
+
+                ( StringPattern patternString, ElmString valueString ) ->
+                    constantMatching.matchString accum patternString valueString
+
+                ( IntPattern patternInt, ElmInt valueInt ) ->
+                    constantMatching.matchInt accum patternInt valueInt
+
+                ( HexPattern patternInt, ElmInt valueInt ) ->
+                    constantMatching.matchInt accum patternInt valueInt
+
+                ( FloatPattern patternFloat, ElmFloat valueFloat ) ->
+                    constantMatching.matchFloat accum patternFloat valueFloat
+
+                ( TuplePattern tupleNodes, ElmTuple tupleValues ) ->
+                    bindSequence accum tupleNodes tupleValues 0
+                        |> Result.mapError (Tuple.second {- Fixme? Record structured errors? -})
+
+                ( RecordPattern nameNodes, ElmRecord recordDict ) ->
+                    nameNodes
+                        |> Result.Extra.combineMap
+                            (\(Node _ name) ->
+                                case Dict.get name recordDict of
+                                    Nothing ->
+                                        Err <| TypeError (MissingRecordField name)
+
+                                    Just v ->
+                                        Ok <| ( name, v )
+                            )
+                        |> Result.map (\pairs -> pairs ++ accum)
+
+                ( UnConsPattern headPattern tailPattern, ElmList listValues ) ->
+                    case listValues of
+                        headValue :: tailValue ->
+                            bind headPattern headValue accum
+                                |> Result.andThen
+                                    (bind tailPattern (ElmList tailValue))
+
+                        _ ->
+                            Err <| PatternMatchError (ConstructorMatchError consConstructorName emptyListConstructorName)
+
+                ( ListPattern listNodes, ElmList listValues ) ->
+                    bindSequence accum listNodes listValues 0
+                        |> Result.mapError (Tuple.second {- Fixme? -})
+
+                ( VarPattern name, _ ) ->
+                    Ok <| ( name, value ) :: accum
+
+                ( NamedPattern qualifiedNameRef constructorPatterns, ElmConstructor constructorName constructorValues ) ->
+                    if qualifiedNameToConstructorName qualifiedNameRef == constructorName then
+                        bindSequence accum constructorPatterns constructorValues 0
+                            |> Result.mapError (Tuple.second {- Fixme? -})
+
+                    else
+                        Err <| PatternMatchError (ConstructorMatchError (qualifiedNameToConstructorName qualifiedNameRef) constructorName)
+
+                ( AsPattern innerPatternNode (Node _ name), _ ) ->
+                    bind innerPatternNode value (( name, value ) :: accum)
+
+                ( ParenthesizedPattern innerPatternNode, _ ) ->
+                    bind innerPatternNode value accum
+
+                _ ->
+                    Err <| TypeError (TypeMismatch pattern value)
+    in
+    bind patternNode originalValue []
+        |> Result.map Dict.fromList
 
 
 evalFunction : Dict String ElmValue -> FunctionImplementation -> Result Error (Dict String ElmValue)
 evalFunction bindings { name, arguments, expression } =
     -- elm-syntax got this one wrong.  x = 7 should be a destructuring instead of a function, but here we are.
-    case arguments of 
+    case arguments of
         [] ->
             evalExpression bindings expression
-                |> Result.map (\value ->
-                    Dict.insert 
-                        (Node.value name)
-                        value
-                        bindings
-                )
+                |> Result.map
+                    (\value ->
+                        Dict.insert
+                            (Node.value name)
+                            value
+                            bindings
+                    )
 
         _ ->
             Debug.todo ""

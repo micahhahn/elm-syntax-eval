@@ -99,4 +99,14 @@ suite =
                 |> makeExpression
                 |> evalExpression Dict.empty
                 |> Expect.equal (Ok ElmUnit)
+        , test "Identity lambda expression" <|
+            \_ ->
+                """
+    let
+        f = \\x -> x
+    in f ()
+                """
+                |> makeExpression
+                |> evalExpression Dict.empty
+                |> Expect.equal (Ok ElmUnit)
         ]
