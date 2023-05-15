@@ -21,7 +21,7 @@ type ElmValue
     | ElmTuple (List ElmValue)
     | ElmRecord (Dict String ElmValue)
     | ElmConstructor ConstructorName (List ElmValue)
-    | ElmLambda (Dict String ElmValue) (ElmValue -> Result Error ElmValue)
+    | ElmLambda (ElmValue -> Result Error ElmValue)
 
 
 type ModuleName
@@ -77,6 +77,15 @@ evalExpression bindings (Node _ expression) =
         UnitExpr ->
             Ok ElmUnit
 
+        Application nodes ->
+            case nodes of 
+                [] ->
+                    Debug.todo "What do we do here?"
+
+                funcNode :: argNodes ->
+                    evalExpression bindings funcNode
+                        |> Result.andThen (\funcValue -> evalApplication bindings funcValue argNodes)
+
         OperatorApplication operator _ leftExpression rightExpression ->
             case (evalExpression bindings leftExpression, evalExpression bindings rightExpression) of 
                 (Err err, _) ->
@@ -130,9 +139,40 @@ evalExpression bindings (Node _ expression) =
         LetExpression letBlock ->
             evalLetBlock bindings letBlock
 
+        LambdaExpression lambda ->
+            bindLambda bindings lambda.args lambda.expression 
+
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
 
+bindLambda : Dict String ElmValue -> List (Node Pattern) -> Node Expression -> Result Error ElmValue
+bindLambda bindings argPatterns expressionNode =
+    case argPatterns of 
+        [] ->
+            evalExpression bindings expressionNode
+
+        (argPattern :: otherArgPatterns) ->
+            Ok <| ElmLambda (\value -> 
+                bindDestructuring caseConstantMatching argPattern value
+                    |> Result.andThen (\argBindings ->
+                        bindLambda (Dict.union argBindings bindings) otherArgPatterns expressionNode
+                    )
+            )
+
+evalApplication : Dict String ElmValue -> ElmValue -> List (Node Expression) -> Result Error ElmValue
+evalApplication bindings value argNodes =
+    case argNodes of 
+        [] ->
+            Ok value
+
+        argNode :: otherArgs ->
+            case value of 
+                ElmLambda func ->
+                    evalExpression bindings argNode
+                        |> Result.andThen func
+
+                _ ->
+                    Debug.todo "Expected lambda"
 
 type alias ConstantMatching =
     { matchChar : Char -> Char -> Result Error ElmValue
@@ -163,8 +203,11 @@ caseConstantMatching =
 bindDestructuring : ConstantMatching -> Node Pattern -> ElmValue -> Result Error (Dict String ElmValue)
 bindDestructuring constantMatching patternNode value =
     case ( Node.value patternNode, value ) of
+        (AllPattern, _) ->
+            Ok <| Dict.empty
+
         _ ->
-            Debug.todo ""
+            Debug.todo ("Unhandled pattern " ++ Debug.toString patternNode)
 
 
 evalFunction : Dict String ElmValue -> FunctionImplementation -> Result Error (Dict String ElmValue)

@@ -89,4 +89,14 @@ suite =
                 |> makeExpression
                 |> evalExpression Dict.empty
                 |> Expect.equal (Ok (ElmInt 2))
+        , test "Simple let with lambda expression" <|
+            \_ ->
+                """
+    let
+        x = \\_ -> ()
+    in x ()
+                """
+                |> makeExpression
+                |> evalExpression Dict.empty
+                |> Expect.equal (Ok ElmUnit)
         ]
