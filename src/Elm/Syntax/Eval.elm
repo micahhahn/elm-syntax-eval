@@ -201,6 +201,10 @@ evalExpression bindings (Node _ expression) =
                     )
                 |> Result.map (Dict.fromList >> ElmRecord)
 
+        ListExpr listNodes ->
+            Result.Extra.combineMap (evalExpression bindings) listNodes
+                |> Result.map ElmList
+
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
 

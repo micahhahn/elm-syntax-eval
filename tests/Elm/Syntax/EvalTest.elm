@@ -157,4 +157,28 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok (ElmRecord (Dict.fromList [ ( "a", ElmInt 1 ), ( "b", ElmInt 2 ) ])))
+        , test "Simple list construction (1)" <|
+            \_ ->
+                """
+    []
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmList []))
+        , test "Simple list construction (2)" <|
+            \_ ->
+                """
+    [1]
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmList [ ElmInt 1 ]))
+        , test "Simple list construction (3)" <|
+            \_ ->
+                """
+    [1, 2]
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmList [ ElmInt 1, ElmInt 2 ]))
         ]
