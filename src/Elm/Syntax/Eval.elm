@@ -5,6 +5,7 @@ import Elm.Syntax.Exposing exposing (Exposing(..))
 import Elm.Syntax.Expression exposing (CaseBlock, Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..), QualifiedNameRef)
+import Elm.Syntax.TypeAnnotation exposing (RecordField)
 import Fuzz exposing (tuple)
 import Graph
 import List.Extra
@@ -26,12 +27,28 @@ type ElmValue
     | ElmLambda (ElmValue -> Result Error ElmValue)
 
 
+type ElmType
+    = ElmUnitT
+    | ElmIntT
+    | ElmFloatT
+    | ElmStringT
+    | ElmCharT
+    | ElmListT ElmType
+    | ElmTupleT (List ElmType)
+    | ElmRecordT (Dict String ElmType)
+    | ElmCustomT TypeName
+
+
 type ModuleName
     = ModuleName String
 
 
 type ConstructorName
     = ConstructorName ModuleName String
+
+
+type TypeName
+    = TypeName ModuleName String
 
 
 qualifiedNameToConstructorName : QualifiedNameRef -> ConstructorName
@@ -45,6 +62,7 @@ type Error
     | TypeError TypeError
     | MissingBinding String
     | CaseNonExhaustive
+    | TrueTypeMismatch
 
 
 type PatternMatchError
@@ -205,8 +223,32 @@ evalExpression bindings (Node _ expression) =
             Result.Extra.combineMap (evalExpression bindings) listNodes
                 |> Result.map ElmList
 
+        RecordAccess recordNode (Node _ fieldNameNode) ->
+            evalExpression bindings recordNode
+                |> Result.andThen
+                    (withRecord
+                        (\recordDict ->
+                            case Dict.get fieldNameNode recordDict of
+                                Nothing ->
+                                    Err <| TypeError (MissingRecordField fieldNameNode)
+
+                                Just value ->
+                                    Ok value
+                        )
+                    )
+
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
+
+
+withRecord : (Dict String ElmValue -> Result Error ElmValue) -> ElmValue -> Result Error ElmValue
+withRecord recordFunc value =
+    case value of
+        ElmRecord recordDict ->
+            recordFunc recordDict
+
+        _ ->
+            Err TrueTypeMismatch
 
 
 bindLambda : Dict String ElmValue -> List (Node Pattern) -> Node Expression -> Result Error ElmValue
