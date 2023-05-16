@@ -192,6 +192,15 @@ evalExpression bindings (Node _ expression) =
         LambdaExpression lambda ->
             bindLambda bindings lambda.args lambda.expression
 
+        RecordExpr recordSetters ->
+            recordSetters
+                |> Result.Extra.combineMap
+                    (\(Node _ ( Node _ name, expressionNode )) ->
+                        evalExpression bindings expressionNode
+                            |> Result.map (Tuple.pair name)
+                    )
+                |> Result.map (Dict.fromList >> ElmRecord)
+
         _ ->
             Debug.todo ("Unimplemented case" ++ Debug.toString expression)
 
