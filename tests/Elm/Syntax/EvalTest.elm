@@ -133,4 +133,12 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok (ElmInt 2))
+        , test "Simple tuple construction" <|
+            \_ ->
+                """
+    (1, 2)
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmTuple [ ElmInt 1, ElmInt 2 ]))
         ]

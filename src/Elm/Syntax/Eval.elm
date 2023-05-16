@@ -5,6 +5,7 @@ import Elm.Syntax.Exposing exposing (Exposing(..))
 import Elm.Syntax.Expression exposing (CaseBlock, Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..), QualifiedNameRef)
+import Fuzz exposing (tuple)
 import Graph
 import List.Extra
 import Result
@@ -177,6 +178,10 @@ evalExpression bindings (Node _ expression) =
 
         CharLiteral char ->
             Ok <| ElmChar char
+
+        TupledExpression tupleNodes ->
+            Result.Extra.combineMap (evalExpression bindings) tupleNodes
+                |> Result.map ElmTuple
 
         LetExpression letBlock ->
             evalLetBlock bindings letBlock
