@@ -2,10 +2,11 @@ module Elm.Syntax.Eval exposing (..)
 
 import Dict exposing (Dict)
 import Elm.Syntax.Exposing exposing (Exposing(..))
-import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
+import Elm.Syntax.Expression exposing (CaseBlock, Expression(..), FunctionImplementation, LetBlock, LetDeclaration(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..), QualifiedNameRef)
 import Graph
+import List.Extra
 import Result
 import Result.Extra
 import Result.Extra2
@@ -42,6 +43,7 @@ type Error
     | PatternMatchError PatternMatchError
     | TypeError TypeError
     | MissingBinding String
+    | CaseNonExhaustive
 
 
 type PatternMatchError
@@ -155,8 +157,20 @@ evalExpression bindings (Node _ expression) =
         Floatable float ->
             Ok <| ElmFloat float
 
-        Negation (Node _ negValue) ->
-            Debug.todo ""
+        Negation negNode ->
+            evalExpression bindings negNode
+                |> Result.andThen
+                    (\value ->
+                        case value of
+                            ElmInt i ->
+                                Ok <| ElmInt -i
+
+                            ElmFloat i ->
+                                Ok <| ElmFloat -i
+
+                            _ ->
+                                Debug.todo ""
+                    )
 
         Literal string ->
             Ok <| ElmString string
@@ -166,6 +180,9 @@ evalExpression bindings (Node _ expression) =
 
         LetExpression letBlock ->
             evalLetBlock bindings letBlock
+
+        CaseExpression caseBlock ->
+            evalCaseBlock bindings caseBlock
 
         LambdaExpression lambda ->
             bindLambda bindings lambda.args lambda.expression
@@ -207,6 +224,32 @@ evalApplication bindings value argNodes =
 
                 _ ->
                     Debug.todo "Expected lambda"
+
+
+evalCaseBlock : Bindings -> CaseBlock -> Result Error ElmValue
+evalCaseBlock bindings { expression, cases } =
+    evalExpression bindings expression
+        |> Result.andThen
+            (\caseValue ->
+                cases
+                    |> List.Extra.findMap
+                        (\( casePattern, caseExpression ) ->
+                            case bindDestructuring caseConstantMatching casePattern caseValue of
+                                Ok newBindings ->
+                                    -- The case statement matched!
+                                    Just <|
+                                        evalExpression (Dict.union newBindings bindings) caseExpression
+
+                                Err (PatternMatchError _) ->
+                                    -- If we have a pattern match error just try the next one
+                                    Nothing
+
+                                Err err ->
+                                    -- Any other error is a type error and needs to be floated up
+                                    Just (Err err)
+                        )
+                    |> Maybe.withDefault (Err CaseNonExhaustive)
+            )
 
 
 type alias ConstantMatching x =

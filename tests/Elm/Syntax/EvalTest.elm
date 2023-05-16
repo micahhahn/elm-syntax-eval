@@ -120,4 +120,17 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok (ElmInt 3))
+        , test "Simple case expression" <|
+            \_ ->
+                """
+    case 2 of 
+        1 ->
+            1
+
+        _ ->
+            2
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmInt 2))
         ]
