@@ -197,4 +197,15 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok (ElmInt 1))
+        , test "Simple record update" <|
+            \_ ->
+                """
+    let 
+        record = { x = 1 }
+    in
+        { record | x = 2 }
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmRecord (Dict.fromList [ ( "x", ElmInt 2 ) ])))
         ]

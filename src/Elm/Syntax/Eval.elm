@@ -259,6 +259,25 @@ evalExpression bindings (Node _ expression) =
                         )
                     )
 
+        RecordUpdateExpression (Node _ recordVarName) recordSetters ->
+            Dict.get recordVarName bindings
+                |> Maybe.map
+                    (withRecord
+                        (\recordDict ->
+                            recordSetters
+                                |> Result.Extra.combineMap
+                                    (\(Node _ ( Node _ name, expressionNode )) ->
+                                        evalExpression bindings expressionNode
+                                            |> Result.map (Tuple.pair name)
+                                    )
+                                |> Result.map
+                                    (\newPairs ->
+                                        ElmRecord (Dict.union (Dict.fromList newPairs) recordDict)
+                                    )
+                        )
+                    )
+                |> Maybe.withDefault (Err (MissingBinding recordVarName))
+
         _ ->
             Debug.todo ("Unimplemented case " ++ Debug.toString expression)
 
