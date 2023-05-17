@@ -8,6 +8,7 @@ import Elm.Syntax.Pattern exposing (Pattern(..), QualifiedNameRef)
 import Elm.Syntax.TypeAnnotation exposing (RecordField)
 import Fuzz exposing (tuple)
 import Graph
+import Graph.Tree exposing (inner)
 import List.Extra
 import Result
 import Result.Extra
@@ -201,6 +202,9 @@ evalExpression bindings (Node _ expression) =
             Result.Extra.combineMap (evalExpression bindings) tupleNodes
                 |> Result.map ElmTuple
 
+        ParenthesizedExpression innerNode ->
+            evalExpression bindings innerNode
+
         LetExpression letBlock ->
             evalLetBlock bindings letBlock
 
@@ -223,14 +227,32 @@ evalExpression bindings (Node _ expression) =
             Result.Extra.combineMap (evalExpression bindings) listNodes
                 |> Result.map ElmList
 
-        RecordAccess recordNode (Node _ fieldNameNode) ->
+        RecordAccess recordNode (Node _ fieldName) ->
             evalExpression bindings recordNode
                 |> Result.andThen
                     (withRecord
                         (\recordDict ->
-                            case Dict.get fieldNameNode recordDict of
+                            case Dict.get fieldName recordDict of
                                 Nothing ->
-                                    Err <| TypeError (MissingRecordField fieldNameNode)
+                                    Err <| TypeError (MissingRecordField fieldName)
+
+                                Just value ->
+                                    Ok value
+                        )
+                    )
+
+        RecordAccessFunction fieldName ->
+            let
+                withoutDot =
+                    String.dropLeft 1 fieldName
+            in
+            Ok <|
+                ElmLambda
+                    (withRecord
+                        (\recordDict ->
+                            case Dict.get withoutDot recordDict of
+                                Nothing ->
+                                    Err <| TypeError (MissingRecordField withoutDot)
 
                                 Just value ->
                                     Ok value
@@ -238,7 +260,7 @@ evalExpression bindings (Node _ expression) =
                     )
 
         _ ->
-            Debug.todo ("Unimplemented case" ++ Debug.toString expression)
+            Debug.todo ("Unimplemented case " ++ Debug.toString expression)
 
 
 withRecord : (Dict String ElmValue -> Result Error ElmValue) -> ElmValue -> Result Error ElmValue

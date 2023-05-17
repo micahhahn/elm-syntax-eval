@@ -189,4 +189,12 @@ suite =
                     |> makeExpression
                     |> evalExpression Dict.empty
                     |> Expect.equal (Ok (ElmInt 1))
+        , test "Simple record access function" <|
+            \_ ->
+                """
+    .x { x = 1 }
+                """
+                    |> makeExpression
+                    |> evalExpression Dict.empty
+                    |> Expect.equal (Ok (ElmInt 1))
         ]
