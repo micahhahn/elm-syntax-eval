@@ -10,9 +10,11 @@ import Fuzz exposing (tuple)
 import Graph
 import Graph.Tree exposing (inner)
 import List.Extra
+import List.Extra2
 import Result
 import Result.Extra
 import Result.Extra2
+import String exposing (left, right)
 
 
 type ElmValue
@@ -64,6 +66,7 @@ type Error
     | MissingBinding String
     | CaseNonExhaustive
     | TrueTypeMismatch
+    | UnsupportedGLSL
 
 
 type PatternMatchError
@@ -145,12 +148,18 @@ evalExpression bindings (Node _ expression) =
                     Err err
 
                 ( Ok leftValue, Ok rightValue ) ->
-                    case ( operator, leftValue, rightValue ) of
-                        ( "+", ElmInt leftInt, ElmInt rightInt ) ->
-                            Ok <| ElmInt (leftInt + rightInt)
+                    case operator of
+                        "+" ->
+                            mapNumber2 (+) (+) leftValue rightValue
 
-                        ( "+", ElmFloat leftFloat, ElmFloat rightFloat ) ->
-                            Ok <| ElmFloat (leftFloat + rightFloat)
+                        "-" ->
+                            mapNumber2 (-) (-) leftValue rightValue
+
+                        "*" ->
+                            mapNumber2 (*) (*) leftValue rightValue
+
+                        "^" ->
+                            mapNumber2 (^) (^) leftValue rightValue
 
                         _ ->
                             Debug.todo ""
@@ -167,6 +176,15 @@ evalExpression bindings (Node _ expression) =
 
                 _ ->
                     Debug.todo ""
+
+        IfBlock condNode trueNode falseNode ->
+            Debug.todo ""
+
+        PrefixOperator operator ->
+            Debug.todo ""
+
+        Operator operator ->
+            Debug.todo ""
 
         Integer int ->
             Ok <| ElmInt int
@@ -278,8 +296,145 @@ evalExpression bindings (Node _ expression) =
                     )
                 |> Maybe.withDefault (Err (MissingBinding recordVarName))
 
+        GLSLExpression _ ->
+            Err UnsupportedGLSL
+
+
+mapNumber : (Int -> Int) -> (Float -> Float) -> ElmValue -> Result Error ElmValue
+mapNumber mapInt mapFloat value =
+    case value of
+        ElmInt int ->
+            Ok <| ElmInt (mapInt int)
+
+        ElmFloat float ->
+            Ok <| ElmFloat (mapFloat float)
+
         _ ->
-            Debug.todo ("Unimplemented case " ++ Debug.toString expression)
+            Debug.todo ""
+
+
+mapNumber2 : (Int -> Int -> Int) -> (Float -> Float -> Float) -> ElmValue -> ElmValue -> Result Error ElmValue
+mapNumber2 mapInt mapFloat value1 value2 =
+    case ( value1, value2 ) of
+        ( ElmInt int1, ElmInt int2 ) ->
+            Ok <| ElmInt (mapInt int1 int2)
+
+        ( ElmFloat float1, ElmFloat float2 ) ->
+            Ok <| ElmFloat (mapFloat float1 float2)
+
+        _ ->
+            Debug.todo ""
+
+
+valueCompare : ElmValue -> ElmValue -> Result Error Order
+valueCompare leftValue rightValue =
+    case ( leftValue, rightValue ) of
+        ( ElmUnit, ElmUnit ) ->
+            Ok EQ
+
+        ( ElmInt leftInt, ElmInt rightInt ) ->
+            Ok (compare leftInt rightInt)
+
+        ( ElmFloat leftFloat, ElmFloat rightFloat ) ->
+            Ok (compare leftFloat rightFloat)
+
+        ( ElmString leftString, ElmString rightString ) ->
+            Ok (compare leftString rightString)
+
+        ( ElmChar leftChar, ElmChar rightChar ) ->
+            Ok (compare leftChar rightChar)
+
+        ( ElmList leftValues, ElmList rightValues ) ->
+            valueCompareSeq ( Ok GT, Ok LT ) EQ valueCompare leftValues rightValues
+
+        ( ElmTuple leftValues, ElmTuple rightValues ) ->
+            valueCompareSeq ( Err (Debug.todo ""), Err (Debug.todo "") ) EQ valueCompare leftValues rightValues
+
+        ( ElmRecord _, ElmRecord _ ) ->
+            Err <| Debug.todo "compare not supported"
+
+        ( ElmConstructor _ _, ElmConstructor _ _ ) ->
+            Err <| Debug.todo "compare not supported"
+
+        ( ElmLambda _, ElmLambda _ ) ->
+            Err <| Debug.todo "compare not supported"
+
+        _ ->
+            Err <| Debug.todo "Type Mistmatch"
+
+
+{-| -}
+valueCompareSeq : ( Result Error a, Result Error a ) -> a -> (ElmValue -> ElmValue -> Result Error a) -> List ElmValue -> List ElmValue -> Result Error a
+valueCompareSeq onMismatch default compareValues originalLeftValues originalRightValues =
+    let
+        go leftValues rightValues =
+            case ( leftValues, rightValues ) of
+                ( left :: otherLeftValues, right :: otherRightValues ) ->
+                    let
+                        result =
+                            compareValues left right
+                    in
+                    if result == Ok default then
+                        go otherLeftValues otherRightValues
+
+                    else
+                        result
+
+                ( [], [] ) ->
+                    Ok default
+
+                ( _, [] ) ->
+                    Tuple.first onMismatch
+
+                ( [], _ ) ->
+                    Tuple.second onMismatch
+    in
+    go originalLeftValues originalRightValues
+
+
+{-| Note that this can work on more types than the general `valueCompare` function
+-}
+valueEquals : ElmValue -> ElmValue -> Result Error Bool
+valueEquals leftValue rightValue =
+    case ( leftValue, rightValue ) of
+        ( ElmList leftValues, ElmList rightValues ) ->
+            valueCompareSeq ( Ok False, Ok False ) True valueEquals leftValues rightValues
+
+        ( ElmTuple leftValues, ElmTuple rightValues ) ->
+            valueCompareSeq ( Err <| Debug.todo "Mismatched tuples", Err <| Debug.todo "Mismatched tuples" ) True valueEquals leftValues rightValues
+
+        ( ElmRecord leftValueDict, ElmRecord rightValueDict ) ->
+            Dict.merge
+                (\_ _ -> Result.map (always False))
+                (\_ left right ->
+                    Result.andThen
+                        (\accum ->
+                            if accum then
+                                valueEquals left right
+
+                            else
+                                Ok False
+                        )
+                )
+                (\_ _ -> Result.map (always False))
+                leftValueDict
+                rightValueDict
+                (Ok True)
+
+        ( ElmConstructor leftConstructor leftValues, ElmConstructor rightConstructor rightValues ) ->
+            if leftConstructor == rightConstructor then
+                valueCompareSeq ( Err <| Debug.todo "Mismatched tuples", Err <| Debug.todo "Mismatched tuples" ) True valueEquals leftValues rightValues
+
+            else
+                -- TODO: Check constructor type here?
+                Ok False
+
+        ( ElmLambda _, ElmLambda _ ) ->
+            Err <| Debug.todo "Comparing functions is not supported"
+
+        _ ->
+            valueCompare leftValue rightValue
+                |> Result.map ((==) EQ)
 
 
 withRecord : (Dict String ElmValue -> Result Error ElmValue) -> ElmValue -> Result Error ElmValue
